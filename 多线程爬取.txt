@@ -1,0 +1,57 @@
+from gevent import monkey
+monkey.patch_all()  # 能够把程序变成协作式运行
+
+import csv
+import requests
+import gevent
+from gevent.queue import Queue
+from bs4 import BeautifulSoup
+
+headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.164 Safari/537.36 Edg/91.0.864.71'
+}
+
+url_list = []
+for i in range(3):
+    page = i * 25
+    url = 'https://book.douban.com/top250?start=' + str(i * 25)
+    url_list.append(url)
+
+# 创建队列对象, 并赋值给work
+work = Queue()
+for url in url_list:
+    work.put_nowait(url)  # 使用put_nowait()方法可以把请求网址放进队列
+
+# 函数封装
+def douban_top250_spider():
+    # start_url = 'https://book.douban.com/top250'
+    while not work.empty():  # 当队列不为空就执行下面的程序
+        start_url = work.get_nowait()
+
+        # for i in range(3):
+        #     params = {
+        #         'start': str(i * 25)
+        #     }
+        res = requests.get(url=start_url, headers=headers)
+        bs_data = BeautifulSoup(res.text, 'html.parser')
+        datas = bs_data.find_all('tr', class_='item')
+        for book in datas:
+            book_name = book.find('div', class_='pl2').find('a').text.replace("\n", "").replace(" ", "")
+            # book_name = book.find_all('a')[1]['title']
+
+            author = book.find('p', class_='pl').text
+            rating = book.find('span', class_='rating_nums').text
+            # print(book_name, rating, author)
+
+            with open('douban_top250.csv', 'a', encoding='utf-8') as file:
+                writer = csv.writer(file)
+                writer.writerow([book_name, rating, author])
+# douban_top250_spider()
+
+task_list = []  # 创建一个空列表
+# 创建协程任务
+for i in range(3):
+    task = gevent.spawn(douban_top250_spider)  # 使用gevent.spawn()函数创建执行协程任务
+    task_list.append(task)
+
+gevent.joinall(task_list)
